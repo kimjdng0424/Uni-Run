@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR 코드 생성기 및 리더기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+        }
+        .tab-button.active {
+            border-color: #3b82f6;
+            color: #3b82f6;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6">
+        <div class="text-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">QR 코드 생성 & 스캔</h1>
+            <p class="text-gray-500 mt-2">QR 코드를 만들거나 스캔하세요.</p>
+        </div>
+
+        <!-- 탭 버튼 -->
+        <div class="grid grid-cols-2 gap-4 border-b border-gray-200">
+            <button id="generateTab" class="tab-button text-center p-3 font-semibold text-gray-600 border-b-2 border-transparent transition-colors duration-300 active">생성하기</button>
+            <button id="scanTab" class="tab-button text-center p-3 font-semibold text-gray-600 border-b-2 border-transparent transition-colors duration-300">스캔하기</button>
+        </div>
+
+        <!-- 생성기 섹션 -->
+        <div id="generatorSection" class="space-y-4">
+            <div>
+                <label for="qrText" class="block text-sm font-medium text-gray-700 mb-2">텍스트 또는 URL</label>
+                <input type="text" id="qrText" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="QR 코드로 만들 내용을 입력하세요">
+            </div>
+            <button id="generateBtn" class="w-full bg-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">
+                QR 코드 생성
+            </button>
+            <div id="qrcode" class="mt-4 p-4 border border-dashed border-gray-300 rounded-lg flex justify-center items-center min-h-[256px] bg-gray-50">
+                <p class="text-gray-400">생성된 QR 코드가 여기에 표시됩니다.</p>
+            </div>
+             <button id="downloadBtn" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 hidden">
+                다운로드
+            </button>
+        </div>
+
+        <!-- 스캐너 섹션 -->
+        <div id="scannerSection" class="space-y-4 hidden">
+             <div class="grid grid-cols-2 gap-4">
+                 <button id="scanFileBtn" class="w-full bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
+                    파일 스캔
+                </button>
+                <input type="file" id="qrFile" accept="image/*" class="hidden">
+                 <button id="scanCameraBtn" class="w-full bg-teal-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition">
+                    카메라 스캔
+                </button>
+             </div>
+            <div id="cameraWrapper" class="hidden relative">
+                 <video id="video" playsinline></video>
+                 <div class="absolute top-0 left-0 w-full h-full flex items-center justify-center pointer-events-none">
+                     <div class="w-2/3 h-2/3 border-4 border-dashed border-white/50 rounded-lg"></div>
+                 </div>
+            </div>
+            <div id="scanResult" class="mt-4 p-4 border border-dashed border-gray-300 rounded-lg min-h-[80px] bg-gray-50 break-words">
+                 <p class="text-gray-400">스캔 결과가 여기에 표시됩니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const generateTab = document.getElementById('generateTab');
+        const scanTab = document.getElementById('scanTab');
+        const generatorSection = document.getElementById('generatorSection');
+        const scannerSection = document.getElementById('scannerSection');
+
+        const qrTextInput = document.getElementById('qrText');
+        const generateBtn = document.getElementById('generateBtn');
+        const qrcodeContainer = document.getElementById('qrcode');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        const scanFileBtn = document.getElementById('scanFileBtn');
+        const qrFileInput = document.getElementById('qrFile');
+        const scanCameraBtn = document.getElementById('scanCameraBtn');
+        const cameraWrapper = document.getElementById('cameraWrapper');
+        const video = document.getElementById('video');
+        const scanResult = document.getElementById('scanResult');
+        
+        let qrcode = null;
+        let stream = null;
+
+        // 탭 전환 로직
+        generateTab.addEventListener('click', () => {
+            stopCamera();
+            generatorSection.classList.remove('hidden');
+            scannerSection.classList.add('hidden');
+            generateTab.classList.add('active');
+            scanTab.classList.remove('active');
+        });
+
+        scanTab.addEventListener('click', () => {
+            generatorSection.classList.add('hidden');
+            scannerSection.classList.remove('hidden');
+            scanTab.classList.add('active');
+            generateTab.classList.remove('active');
+        });
+
+        // QR 코드 생성 로직
+        generateBtn.addEventListener('click', () => {
+            const text = qrTextInput.value.trim();
+            if (text) {
+                if (qrcode) {
+                    qrcode.clear();
+                    qrcode.makeCode(text);
+                } else {
+                    qrcodeContainer.innerHTML = '';
+                    qrcode = new QRCode(qrcodeContainer, {
+                        text: text,
+                        width: 256,
+                        height: 256,
+                        colorDark : "#000000",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                    });
+                }
+                downloadBtn.classList.remove('hidden');
+            } else {
+                alert("내용을 입력해주세요!");
+            }
+        });
+
+        // 다운로드 버튼 로직
+        downloadBtn.addEventListener('click', () => {
+             const img = qrcodeContainer.querySelector('img');
+             if (img) {
+                 const link = document.createElement('a');
+                 link.href = img.src;
+                 link.download = 'qrcode.png';
+                 document.body.appendChild(link);
+                 link.click();
+                 document.body.removeChild(link);
+             }
+        });
+
+
+        // 파일 스캔 로직
+        scanFileBtn.addEventListener('click', () => qrFileInput.click());
+        qrFileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    
+                    if (code) {
+                        displayScanResult(code.data);
+                    } else {
+                         displayScanResult("QR 코드를 찾을 수 없습니다.");
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        // 카메라 스캔 로직
+        scanCameraBtn.addEventListener('click', async () => {
+            if (stream) {
+                stopCamera();
+                return;
+            }
+            cameraWrapper.classList.remove('hidden');
+            scanCameraBtn.textContent = '카메라 끄기';
+            scanCameraBtn.classList.replace('bg-teal-500', 'bg-red-500');
+            scanCameraBtn.classList.replace('hover:bg-teal-600', 'hover:bg-red-600');
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // iOS Safari 대응
+                video.play();
+                requestAnimationFrame(tick);
+            } catch (err) {
+                console.error("카메라 접근 오류:", err);
+                displayScanResult("카메라를 사용할 수 없습니다.");
+                stopCamera();
+            }
+        });
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            cameraWrapper.classList.add('hidden');
+            scanCameraBtn.textContent = '카메라 스캔';
+            scanCameraBtn.classList.replace('bg-red-500', 'bg-teal-500');
+            scanCameraBtn.classList.replace('hover:bg-red-600', 'hover:bg-teal-600');
+        }
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA && stream) {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+                
+                if (code) {
+                    displayScanResult(code.data);
+                    stopCamera();
+                    return; // 스캔 성공 시 반복 중단
+                }
+            }
+            if (stream) {
+                 requestAnimationFrame(tick);
+            }
+        }
+        
+        function displayScanResult(result) {
+            scanResult.innerHTML = '';
+            // URL인 경우 링크로 만들기
+            if (result.startsWith('http://') || result.startsWith('https://')) {
+                const link = document.createElement('a');
+                link.href = result;
+                link.textContent = result;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.className = 'text-blue-600 hover:underline';
+                scanResult.appendChild(link);
+            } else {
+                 scanResult.textContent = result;
+            }
+        }
+    </script>
+</body>
+</html>
