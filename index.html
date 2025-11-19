@@ -1,261 +1,650 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR 코드 생성기 및 리더기</title>
+    <title>개발자 포트폴리오</title>
+    <meta name="description" content="인터랙티브한 개발자 포트폴리오입니다.">
+    
+    <!-- Tailwind CSS (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Google Fonts (Noto Sans KR) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans KR"', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#3b82f6',
+                        dark: '#0f172a',
+                        darker: '#020617',
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
+        /* Custom Styles for interactions */
         body {
-            font-family: 'Inter', sans-serif;
+            background-color: #020617;
+            color: #e2e8f0;
+            overflow-x: hidden;
         }
-        #video {
+
+        /* Canvas Background */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
-            height: auto;
-            border-radius: 0.5rem;
+            height: 100%;
+            z-index: -1;
+            pointer-events: none; /* Allows clicking through the canvas */
         }
-        .tab-button.active {
-            border-color: #3b82f6;
-            color: #3b82f6;
-            background-color: #eff6ff;
+
+        /* Scroll Reveal Classes */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease-out;
+        }
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Custom Cursor (Optional aesthetic) */
+        .cursor-dot,
+        .cursor-outline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        .cursor-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #3b82f6;
+        }
+        .cursor-outline {
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(59, 130, 246, 0.5);
+            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        }
+        
+        /* Hover effect on interactive elements expands the cursor */
+        body:has(a:hover, button:hover, .project-card:hover) .cursor-outline {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(59, 130, 246, 0.1);
+            border-color: transparent;
+        }
+
+        /* Hide default cursor on desktop */
+        @media (min-width: 768px) {
+            body {
+                cursor: none;
+            }
+        }
+        @media (max-width: 767px) {
+            .cursor-dot, .cursor-outline {
+                display: none;
+            }
+        }
+
+        /* Glassmorphism Navbar */
+        .glass-nav {
+            background: rgba(2, 6, 23, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body class="antialiased selection:bg-primary selection:text-white">
 
-    <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6">
-        <div class="text-center">
-            <h1 class="text-2xl md:text-3xl font-bold text-gray-800">QR 코드 생성 & 스캔</h1>
-            <p class="text-gray-500 mt-2">QR 코드를 만들거나 스캔하세요.</p>
-        </div>
+    <!-- Custom Cursor Elements -->
+    <div class="cursor-dot" id="cursor-dot"></div>
+    <div class="cursor-outline" id="cursor-outline"></div>
 
-        <!-- 탭 버튼 -->
-        <div class="grid grid-cols-2 gap-4 border-b border-gray-200">
-            <button id="generateTab" class="tab-button text-center p-3 font-semibold text-gray-600 border-b-2 border-transparent transition-colors duration-300 active">생성하기</button>
-            <button id="scanTab" class="tab-button text-center p-3 font-semibold text-gray-600 border-b-2 border-transparent transition-colors duration-300">스캔하기</button>
-        </div>
+    <!-- Interactive Background -->
+    <canvas id="canvas-container"></canvas>
 
-        <!-- 생성기 섹션 -->
-        <div id="generatorSection" class="space-y-4">
-            <div>
-                <label for="qrText" class="block text-sm font-medium text-gray-700 mb-2">텍스트 또는 URL</label>
-                <input type="text" id="qrText" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="QR 코드로 만들 내용을 입력하세요">
-            </div>
-            <button id="generateBtn" class="w-full bg-blue-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">
-                QR 코드 생성
-            </button>
-            <div id="qrcode" class="mt-4 p-4 border border-dashed border-gray-300 rounded-lg flex justify-center items-center min-h-[256px] bg-gray-50">
-                <p class="text-gray-400">생성된 QR 코드가 여기에 표시됩니다.</p>
-            </div>
-             <button id="downloadBtn" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 hidden">
-                다운로드
-            </button>
-        </div>
-
-        <!-- 스캐너 섹션 -->
-        <div id="scannerSection" class="space-y-4 hidden">
-             <div class="grid grid-cols-2 gap-4">
-                 <button id="scanFileBtn" class="w-full bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
-                    파일 스캔
-                </button>
-                <input type="file" id="qrFile" accept="image/*" class="hidden">
-                 <button id="scanCameraBtn" class="w-full bg-teal-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition">
-                    카메라 스캔
-                </button>
-             </div>
-            <div id="cameraWrapper" class="hidden relative">
-                 <video id="video" playsinline></video>
-                 <div class="absolute top-0 left-0 w-full h-full flex items-center justify-center pointer-events-none">
-                     <div class="w-2/3 h-2/3 border-4 border-dashed border-white/50 rounded-lg"></div>
-                 </div>
-            </div>
-            <div id="scanResult" class="mt-4 p-4 border border-dashed border-gray-300 rounded-lg min-h-[80px] bg-gray-50 break-words">
-                 <p class="text-gray-400">스캔 결과가 여기에 표시됩니다.</p>
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 glass-nav transition-all duration-300" id="navbar">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex-shrink-0 font-bold text-2xl text-primary tracking-tighter">
+                    <a href="#home">DEV<span class="text-white">PORTFOLIO</span></a>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-8">
+                        <a href="#home" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">홈</a>
+                        <a href="#about" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">소개</a>
+                        <a href="#skills" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">기술</a>
+                        <a href="#projects" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">프로젝트</a>
+                        <a href="https://kimjdng0424.github.io/Uni-Run/QR.html" target="_blank" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">유니런</a>
+                        <a href="#contact" class="hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">연락처</a>
+                    </div>
+                </div>
+                <!-- Mobile menu button -->
+                <div class="md:hidden">
+                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white focus:outline-none">
+                        <i class="fas fa-bars text-2xl"></i>
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
+        <!-- Mobile Menu -->
+        <div class="md:hidden hidden bg-darker border-b border-gray-800" id="mobile-menu">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#home" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">홈</a>
+                <a href="#about" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">소개</a>
+                <a href="#skills" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">기술</a>
+                <a href="#projects" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">프로젝트</a>
+                <a href="https://kimjdng0424.github.io/Uni-Run/QR.html" target="_blank" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">유니런</a>
+                <a href="#contact" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-800 hover:text-primary">연락처</a>
+            </div>
+        </div>
+    </nav>
 
-    <script>
-        const generateTab = document.getElementById('generateTab');
-        const scanTab = document.getElementById('scanTab');
-        const generatorSection = document.getElementById('generatorSection');
-        const scannerSection = document.getElementById('scannerSection');
-
-        const qrTextInput = document.getElementById('qrText');
-        const generateBtn = document.getElementById('generateBtn');
-        const qrcodeContainer = document.getElementById('qrcode');
-        const downloadBtn = document.getElementById('downloadBtn');
-
-        const scanFileBtn = document.getElementById('scanFileBtn');
-        const qrFileInput = document.getElementById('qrFile');
-        const scanCameraBtn = document.getElementById('scanCameraBtn');
-        const cameraWrapper = document.getElementById('cameraWrapper');
-        const video = document.getElementById('video');
-        const scanResult = document.getElementById('scanResult');
-        
-        let qrcode = null;
-        let stream = null;
-
-        // 탭 전환 로직
-        generateTab.addEventListener('click', () => {
-            stopCamera();
-            generatorSection.classList.remove('hidden');
-            scannerSection.classList.add('hidden');
-            generateTab.classList.add('active');
-            scanTab.classList.remove('active');
-        });
-
-        scanTab.addEventListener('click', () => {
-            generatorSection.classList.add('hidden');
-            scannerSection.classList.remove('hidden');
-            scanTab.classList.add('active');
-            generateTab.classList.remove('active');
-        });
-
-        // QR 코드 생성 로직
-        generateBtn.addEventListener('click', () => {
-            const text = qrTextInput.value.trim();
-            if (text) {
-                if (qrcode) {
-                    qrcode.clear();
-                    qrcode.makeCode(text);
-                } else {
-                    qrcodeContainer.innerHTML = '';
-                    qrcode = new QRCode(qrcodeContainer, {
-                        text: text,
-                        width: 256,
-                        height: 256,
-                        colorDark : "#000000",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
-                    });
-                }
-                downloadBtn.classList.remove('hidden');
-            } else {
-                alert("내용을 입력해주세요!");
-            }
-        });
-
-        // 다운로드 버튼 로직
-        downloadBtn.addEventListener('click', () => {
-             const img = qrcodeContainer.querySelector('img');
-             if (img) {
-                 const link = document.createElement('a');
-                 link.href = img.src;
-                 link.download = 'qrcode.png';
-                 document.body.appendChild(link);
-                 link.click();
-                 document.body.removeChild(link);
-             }
-        });
-
-
-        // 파일 스캔 로직
-        scanFileBtn.addEventListener('click', () => qrFileInput.click());
-        qrFileInput.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (!file) {
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const code = jsQR(imageData.data, imageData.width, imageData.height);
-                    
-                    if (code) {
-                        displayScanResult(code.data);
-                    } else {
-                         displayScanResult("QR 코드를 찾을 수 없습니다.");
-                    }
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
-        
-        // 카메라 스캔 로직
-        scanCameraBtn.addEventListener('click', async () => {
-            if (stream) {
-                stopCamera();
-                return;
-            }
-            cameraWrapper.classList.remove('hidden');
-            scanCameraBtn.textContent = '카메라 끄기';
-            scanCameraBtn.classList.replace('bg-teal-500', 'bg-red-500');
-            scanCameraBtn.classList.replace('hover:bg-teal-600', 'hover:bg-red-600');
+    <!-- Hero Section -->
+    <section id="home" class="h-screen flex items-center justify-center relative pt-16">
+        <div class="text-center z-10 px-4">
+            <p class="text-primary font-medium mb-4 text-lg reveal">안녕하세요, 저는</p>
+            <h1 class="text-5xl md:text-7xl font-black mb-6 tracking-tight text-white reveal transition-all hover:scale-105 duration-300 cursor-default">
+                김개발<span class="text-primary">.</span>
+            </h1>
+            <div class="text-2xl md:text-4xl font-bold text-gray-400 mb-8 h-12 flex justify-center items-center reveal">
+                <span class="mr-2">I build</span>
+                <span id="typing-text" class="text-white border-r-2 border-primary pr-2"></span>
+            </div>
+            <div class="flex justify-center gap-4 reveal">
+                <a href="#projects" class="px-8 py-3 bg-primary text-white rounded-full font-bold hover:bg-blue-600 transition-all transform hover:-translate-y-1 shadow-lg shadow-blue-500/30">
+                    프로젝트 보기
+                </a>
+                <a href="#contact" class="px-8 py-3 border border-gray-600 text-gray-300 rounded-full font-bold hover:border-white hover:text-white transition-all transform hover:-translate-y-1 hover:bg-white/5">
+                    연락하기
+                </a>
+            </div>
             
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                video.srcObject = stream;
-                video.setAttribute("playsinline", true); // iOS Safari 대응
-                video.play();
-                requestAnimationFrame(tick);
-            } catch (err) {
-                console.error("카메라 접근 오류:", err);
-                displayScanResult("카메라를 사용할 수 없습니다.");
-                stopCamera();
-            }
+            <div class="absolute bottom-10 left-1/2 transform -translate-x-1/2 animate-bounce-slow">
+                <a href="#about" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-chevron-down text-2xl"></i>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="py-24 bg-dark">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                <div class="reveal relative group">
+                    <!-- Placeholder for Profile Image -->
+                    <div class="aspect-square rounded-2xl bg-gray-800 overflow-hidden relative border border-gray-700 group-hover:border-primary transition-colors duration-300">
+                        <div class="absolute inset-0 flex items-center justify-center text-gray-600">
+                            <i class="fas fa-user text-9xl group-hover:text-primary/20 transition-colors duration-300"></i>
+                        </div>
+                        <!-- Replace src with your image -->
+                        <img src="https://source.unsplash.com/random/600x600?developer,code" 
+                             alt="Profile" 
+                             class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity duration-500 mix-blend-overlay"
+                             onerror="this.style.display='none'">
+                    </div>
+                    <!-- Decorative Element -->
+                    <div class="absolute -bottom-6 -right-6 w-48 h-48 bg-primary/20 rounded-full blur-3xl -z-10"></div>
+                </div>
+                
+                <div class="reveal">
+                    <h2 class="text-3xl md:text-4xl font-bold mb-6 flex items-center">
+                        <span class="w-12 h-1 bg-primary mr-4"></span>
+                        저에 대해서
+                    </h2>
+                    <p class="text-gray-400 text-lg leading-relaxed mb-6">
+                        안녕하세요! 저는 웹 기술을 통해 문제를 해결하는 것을 즐기는 풀스택 개발자입니다.
+                        사용자 경험(UX)을 최우선으로 생각하며, 효율적이고 확장 가능한 코드를 작성하기 위해 끊임없이 노력합니다.
+                    </p>
+                    <p class="text-gray-400 text-lg leading-relaxed mb-8">
+                        새로운 기술을 배우는 것에 두려움이 없으며, 아이디어를 현실로 구현하는 과정에서 큰 즐거움을 느낍니다.
+                        현재는 React와 Node.js 생태계에 깊은 관심을 가지고 있습니다.
+                    </p>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 hover:border-primary transition-colors">
+                            <h3 class="font-bold text-white mb-1">경력</h3>
+                            <p class="text-gray-400 text-sm">3년+ 웹 개발 경험</p>
+                        </div>
+                        <div class="bg-gray-800/50 p-4 rounded-lg border border-gray-700 hover:border-primary transition-colors">
+                            <h3 class="font-bold text-white mb-1">프로젝트</h3>
+                            <p class="text-gray-400 text-sm">20+ 완료된 프로젝트</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Skills Section -->
+    <section id="skills" class="py-24 bg-darker relative">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <h2 class="text-3xl md:text-4xl font-bold mb-16 text-center reveal">
+                기술 스택
+            </h2>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                <!-- Skill Items -->
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-html5 text-5xl text-orange-500 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">HTML5</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-css3-alt text-5xl text-blue-500 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">CSS3</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-js text-5xl text-yellow-400 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">JavaScript</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-react text-5xl text-cyan-400 mb-4 transform group-hover:rotate-90 transition-transform duration-700"></i>
+                    <h3 class="text-xl font-bold">React</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-node text-5xl text-green-500 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">Node.js</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-python text-5xl text-blue-300 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">Python</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fab fa-git-alt text-5xl text-red-500 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">Git</h3>
+                </div>
+                <div class="reveal p-6 rounded-xl bg-gray-800/30 hover:bg-gray-800 border border-gray-700 hover:border-primary transition-all duration-300 group">
+                    <i class="fas fa-database text-5xl text-teal-400 mb-4 transform group-hover:scale-110 transition-transform"></i>
+                    <h3 class="text-xl font-bold">SQL</h3>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Projects Section -->
+    <section id="projects" class="py-24 bg-dark">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 class="text-3xl md:text-4xl font-bold mb-4 text-center reveal">프로젝트</h2>
+            <p class="text-gray-400 text-center mb-16 reveal">최근에 작업한 주요 프로젝트들입니다.</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                
+                <!-- Project Card 1 -->
+                <div class="reveal project-card bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-primary transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 group hover:-translate-y-2">
+                    <div class="h-48 bg-gray-700 overflow-hidden relative">
+                        <!-- Overlay -->
+                        <div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <a href="#" class="px-6 py-2 bg-primary text-white rounded-full font-bold transform scale-90 group-hover:scale-100 transition-transform">상세보기</a>
+                        </div>
+                        <!-- Project Image Placeholder -->
+                        <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-900">
+                            <i class="fas fa-laptop-code text-6xl text-gray-600"></i>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold mb-2 text-white group-hover:text-primary transition-colors">E-commerce 플랫폼</h3>
+                        <p class="text-gray-400 text-sm mb-4">React와 Node.js를 사용한 풀스택 쇼핑몰 프로젝트입니다. 결제 모듈 연동 및 관리자 페이지를 포함합니다.</p>
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <span class="px-3 py-1 text-xs rounded-full bg-blue-900/30 text-blue-400 border border-blue-900">React</span>
+                            <span class="px-3 py-1 text-xs rounded-full bg-green-900/30 text-green-400 border border-green-900">Node.js</span>
+                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-900/30 text-yellow-400 border border-yellow-900">MongoDB</span>
+                        </div>
+                        <div class="flex justify-between pt-4 border-t border-gray-700">
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fab fa-github"></i> GitHub</a>
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fas fa-external-link-alt"></i> Demo</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Project Card 2 -->
+                <div class="reveal project-card bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-primary transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 group hover:-translate-y-2">
+                    <div class="h-48 bg-gray-700 overflow-hidden relative">
+                        <div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <a href="#" class="px-6 py-2 bg-primary text-white rounded-full font-bold transform scale-90 group-hover:scale-100 transition-transform">상세보기</a>
+                        </div>
+                        <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-900">
+                            <i class="fas fa-comments text-6xl text-gray-600"></i>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold mb-2 text-white group-hover:text-primary transition-colors">실시간 채팅 앱</h3>
+                        <p class="text-gray-400 text-sm mb-4">Socket.io를 활용한 실시간 채팅 서비스입니다. 그룹 채팅 및 이미지 전송 기능을 지원합니다.</p>
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <span class="px-3 py-1 text-xs rounded-full bg-orange-900/30 text-orange-400 border border-orange-900">HTML/CSS</span>
+                            <span class="px-3 py-1 text-xs rounded-full bg-purple-900/30 text-purple-400 border border-purple-900">Socket.io</span>
+                        </div>
+                        <div class="flex justify-between pt-4 border-t border-gray-700">
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fab fa-github"></i> GitHub</a>
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fas fa-external-link-alt"></i> Demo</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Project Card 3 -->
+                <div class="reveal project-card bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-primary transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 group hover:-translate-y-2">
+                    <div class="h-48 bg-gray-700 overflow-hidden relative">
+                        <div class="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <a href="#" class="px-6 py-2 bg-primary text-white rounded-full font-bold transform scale-90 group-hover:scale-100 transition-transform">상세보기</a>
+                        </div>
+                        <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-900">
+                            <i class="fas fa-chart-line text-6xl text-gray-600"></i>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold mb-2 text-white group-hover:text-primary transition-colors">데이터 시각화 대시보드</h3>
+                        <p class="text-gray-400 text-sm mb-4">D3.js를 활용하여 복잡한 데이터를 직관적인 그래프로 표현하는 관리자 대시보드입니다.</p>
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <span class="px-3 py-1 text-xs rounded-full bg-blue-900/30 text-blue-400 border border-blue-900">Vue.js</span>
+                            <span class="px-3 py-1 text-xs rounded-full bg-pink-900/30 text-pink-400 border border-pink-900">D3.js</span>
+                        </div>
+                        <div class="flex justify-between pt-4 border-t border-gray-700">
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fab fa-github"></i> GitHub</a>
+                            <a href="#" class="text-sm text-gray-400 hover:text-white flex items-center gap-2"><i class="fas fa-external-link-alt"></i> Demo</a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="py-24 bg-darker">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="bg-gray-800/30 border border-gray-700 rounded-2xl p-8 md:p-12 reveal">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4 text-center">함께 일해볼까요?</h2>
+                <p class="text-gray-400 text-center mb-10">새로운 프로젝트 논의나 질문이 있다면 언제든 연락주세요.</p>
+                
+                <div class="flex flex-col md:flex-row gap-8 justify-center items-center mb-12">
+                    <a href="mailto:example@email.com" class="flex items-center gap-4 p-4 rounded-lg bg-gray-800 hover:bg-gray-700 hover:text-primary transition-colors border border-gray-700 w-full md:w-auto justify-center group">
+                        <div class="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                            <i class="fas fa-envelope text-xl"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-xs text-gray-400">Email</p>
+                            <p class="font-bold">contact@email.com</p>
+                        </div>
+                    </a>
+                    
+                    <a href="#" class="flex items-center gap-4 p-4 rounded-lg bg-gray-800 hover:bg-gray-700 hover:text-primary transition-colors border border-gray-700 w-full md:w-auto justify-center group">
+                        <div class="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                            <i class="fab fa-linkedin-in text-xl"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="text-xs text-gray-400">LinkedIn</p>
+                            <p class="font-bold">Connect with me</p>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Simple Form Mockup -->
+                <form class="space-y-4" onsubmit="event.preventDefault(); alert('메시지가 전송되었습니다! (데모 기능)');">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" placeholder="이름" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder-gray-500">
+                        <input type="email" placeholder="이메일" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder-gray-500">
+                    </div>
+                    <textarea rows="4" placeholder="메시지를 입력하세요..." class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder-gray-500"></textarea>
+                    <button type="submit" class="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-all transform hover:-translate-y-1 shadow-lg shadow-blue-500/30">
+                        메시지 보내기
+                    </button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-darker py-8 border-t border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <div class="flex justify-center space-x-6 mb-4">
+                <a href="#" class="text-gray-400 hover:text-white transition-colors"><i class="fab fa-github text-2xl"></i></a>
+                <a href="#" class="text-gray-400 hover:text-white transition-colors"><i class="fab fa-twitter text-2xl"></i></a>
+                <a href="#" class="text-gray-400 hover:text-white transition-colors"><i class="fab fa-instagram text-2xl"></i></a>
+            </div>
+            <p class="text-gray-500 text-sm">
+                &copy; 2024 Kim Developer. All rights reserved.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script>
+        // 1. Particle Canvas Background
+        const canvas = document.getElementById('canvas-container');
+        const ctx = canvas.getContext('2d');
+        
+        let particlesArray;
+        let mouse = { x: null, y: null, radius: 150 };
+
+        // Handle resizing
+        function setCanvasSize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        setCanvasSize();
+        window.addEventListener('resize', () => {
+            setCanvasSize();
+            initParticles();
         });
 
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
+        // Mouse interaction
+        window.addEventListener('mousemove', (event) => {
+            mouse.x = event.x;
+            mouse.y = event.y;
+            
+            // Custom cursor movement
+            const cursorDot = document.getElementById('cursor-dot');
+            const cursorOutline = document.getElementById('cursor-outline');
+            
+            cursorDot.style.left = `${event.x}px`;
+            cursorDot.style.top = `${event.y}px`;
+            
+            // Add a little delay/smoothness to the outline
+            cursorOutline.animate({
+                left: `${event.x}px`,
+                top: `${event.y}px`
+            }, { duration: 500, fill: "forwards" });
+        });
+        
+        // Handle mouse out
+        window.addEventListener('mouseout', () => {
+            mouse.x = undefined;
+            mouse.y = undefined;
+        });
+
+        // Particle Class
+        class Particle {
+            constructor(x, y, directionX, directionY, size, color) {
+                this.x = x;
+                this.y = y;
+                this.directionX = directionX;
+                this.directionY = directionY;
+                this.size = size;
+                this.color = color;
             }
-            cameraWrapper.classList.add('hidden');
-            scanCameraBtn.textContent = '카메라 스캔';
-            scanCameraBtn.classList.replace('bg-red-500', 'bg-teal-500');
-            scanCameraBtn.classList.replace('hover:bg-red-600', 'hover:bg-teal-600');
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2, false);
+                ctx.fillStyle = '#3b82f6'; // Blue particles
+                ctx.fill();
+            }
+            
+            update() {
+                // Check borders
+                if (this.x > canvas.width || this.x < 0) this.directionX = -this.directionX;
+                if (this.y > canvas.height || this.y < 0) this.directionY = -this.directionY;
+                
+                // Mouse collision/attraction check
+                let dx = mouse.x - this.x;
+                let dy = mouse.y - this.y;
+                let distance = Math.sqrt(dx*dx + dy*dy);
+                
+                if (distance < mouse.radius + this.size) {
+                    if (mouse.x < this.x && this.x < canvas.width - this.size * 10) this.x += 2;
+                    if (mouse.x > this.x && this.x > this.size * 10) this.x -= 2;
+                    if (mouse.y < this.y && this.y < canvas.height - this.size * 10) this.y += 2;
+                    if (mouse.y > this.y && this.y > this.size * 10) this.y -= 2;
+                }
+                
+                this.x += this.directionX;
+                this.y += this.directionY;
+                this.draw();
+            }
         }
 
-        function tick() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA && stream) {
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: "dontInvert",
-                });
-                
-                if (code) {
-                    displayScanResult(code.data);
-                    stopCamera();
-                    return; // 스캔 성공 시 반복 중단
+        function initParticles() {
+            particlesArray = [];
+            // Calculate number of particles based on screen size
+            let numberOfParticles = (canvas.height * canvas.width) / 15000; 
+            for (let i = 0; i < numberOfParticles; i++) {
+                let size = (Math.random() * 2) + 1;
+                let x = (Math.random() * ((innerWidth - size * 2) - (size * 2)) + size * 2);
+                let y = (Math.random() * ((innerHeight - size * 2) - (size * 2)) + size * 2);
+                let directionX = (Math.random() * 1) - 0.5;
+                let directionY = (Math.random() * 1) - 0.5;
+                let color = '#3b82f6';
+                particlesArray.push(new Particle(x, y, directionX, directionY, size, color));
+            }
+        }
+
+        function connectParticles() {
+            let opacityValue = 1;
+            for (let a = 0; a < particlesArray.length; a++) {
+                for (let b = a; b < particlesArray.length; b++) {
+                    let distance = ((particlesArray[a].x - particlesArray[b].x) * (particlesArray[a].x - particlesArray[b].x))
+                    + ((particlesArray[a].y - particlesArray[b].y) * (particlesArray[a].y - particlesArray[b].y));
+                    
+                    if (distance < (canvas.width/7) * (canvas.height/7)) {
+                        opacityValue = 1 - (distance/20000);
+                        ctx.strokeStyle = 'rgba(59, 130, 246,' + opacityValue * 0.2 + ')'; // Blue lines, faint
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(particlesArray[a].x, particlesArray[a].y);
+                        ctx.lineTo(particlesArray[b].x, particlesArray[b].y);
+                        ctx.stroke();
+                    }
                 }
             }
-            if (stream) {
-                 requestAnimationFrame(tick);
+        }
+
+        function animateParticles() {
+            requestAnimationFrame(animateParticles);
+            ctx.clearRect(0, 0, innerWidth, innerHeight);
+            
+            for (let i = 0; i < particlesArray.length; i++) {
+                particlesArray[i].update();
+            }
+            connectParticles();
+        }
+
+        initParticles();
+        animateParticles();
+
+
+        // 2. Typing Effect
+        const words = ["Web Developer.", "UI/UX Designer.", "Problem Solver."];
+        let i = 0;
+        let timer;
+
+        function typeWriter() {
+            const typingElement = document.getElementById("typing-text");
+            const word = words[i].split("");
+            
+            function loopTyping() {
+                if (word.length > 0) {
+                    typingElement.innerHTML += word.shift();
+                } else {
+                    setTimeout(deleteTyping, 2000); // Wait before deleting
+                    return false;
+                }
+                timer = setTimeout(loopTyping, 100); // Typing speed
+            }
+            loopTyping();
+        }
+
+        function deleteTyping() {
+            const typingElement = document.getElementById("typing-text");
+            const word = words[i].split("");
+            
+            function loopDeleting() {
+                if (word.length > 0) {
+                    word.pop();
+                    typingElement.innerHTML = word.join("");
+                } else {
+                    if (words.length > (i + 1)) {
+                        i++;
+                    } else {
+                        i = 0;
+                    }
+                    typeWriter();
+                    return false;
+                }
+                timer = setTimeout(loopDeleting, 50); // Deleting speed
+            }
+            loopDeleting();
+        }
+
+        typeWriter();
+
+
+        // 3. Scroll Reveal Animation
+        function reveal() {
+            var reveals = document.querySelectorAll(".reveal");
+            for (var i = 0; i < reveals.length; i++) {
+                var windowHeight = window.innerHeight;
+                var elementTop = reveals[i].getBoundingClientRect().top;
+                var elementVisible = 150;
+                if (elementTop < windowHeight - elementVisible) {
+                    reveals[i].classList.add("active");
+                }
             }
         }
+        window.addEventListener("scroll", reveal);
+        reveal(); // Trigger once on load
+
+
+        // 4. Mobile Menu Toggle
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
         
-        function displayScanResult(result) {
-            scanResult.innerHTML = '';
-            // URL인 경우 링크로 만들기
-            if (result.startsWith('http://') || result.startsWith('https://')) {
-                const link = document.createElement('a');
-                link.href = result;
-                link.textContent = result;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.className = 'text-blue-600 hover:underline';
-                scanResult.appendChild(link);
-            } else {
-                 scanResult.textContent = result;
-            }
-        }
+        // Close mobile menu when clicking a link
+        menu.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                menu.classList.add('hidden');
+            });
+        });
+
     </script>
 </body>
 </html>
